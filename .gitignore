@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.env
+*.log
+
+# Large model weights (too big for GitHub)
+*.pt
+*.onnx
+*.engine
+
+# Dataset images (large binary files)
+archive/
+yolo_dataset/
+
+# YOLO training outputs
+runs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+desktop.ini
