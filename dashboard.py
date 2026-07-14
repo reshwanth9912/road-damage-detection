@@ -482,8 +482,8 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎯 Inspection Mode")
 mode = st.sidebar.radio(
     "Select Mode",
-    [" Live Photo / Upload", "📹 Live Camera Stream"],
-    index=1,
+    ["📂 Dataset Browse", "📸 Live Photo / Upload"],
+    index=0,
     label_visibility="collapsed"
 )
 
@@ -536,9 +536,124 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════
+# MODE 1 — DATASET BROWSE
+# ═══════════════════════════════════════════════
+if mode == "📂 Dataset Browse":
+    # 1. Try dataset directory path from Streamlit Secrets
+    # 2. Try relative path within repository
+    # 3. Try hardcoded local absolute path
+    base_dir = r"c:\Users\meher\Downloads\mini DATASET"
+    try:
+        if "DATASET_DIR" in st.secrets:
+            base_dir = st.secrets["DATASET_DIR"]
+        elif os.path.exists(os.path.join(os.path.dirname(__file__), "archive")):
+            base_dir = os.path.dirname(__file__)
+    except Exception:
+        pass
+        
+    test_rgb_dir  = os.path.join(base_dir, "archive", "pothole600", "testing", "rgb")
+    test_disp_dir = os.path.join(base_dir, "archive", "pothole600", "testing", "tdisp")
+
+    if os.path.exists(test_rgb_dir):
+        test_files = sorted([f for f in os.listdir(test_rgb_dir) if f.lower().endswith(".png")])
+    else:
+        test_files = []
+
+    if len(test_files) == 0:
+        st.error("❌ No test images found. Verify dataset path: `archive/pothole600/testing/rgb/`")
+        st.stop()
+
+    frame_idx = st.sidebar.slider("Road Frame Index", 0, len(test_files)-1, 0)
+
+    # Track frame changes to auto-reset inspection state to 0
+    if "current_frame" not in st.session_state or st.session_state.current_frame != frame_idx:
+        st.session_state.current_frame = frame_idx
+        st.session_state.inspected = False
+        st.session_state.detection_results = None
+
+    file_name = test_files[frame_idx]
+    rgb_path  = os.path.join(test_rgb_dir, file_name)
+    disp_path = os.path.join(test_disp_dir, file_name)
+
+    if not os.path.exists(rgb_path):
+        st.error(f"Missing RGB file: {file_name}")
+        st.stop()
+
+    rgb_pil = Image.open(rgb_path)
+    disp_arr = None
+    if os.path.exists(disp_path):
+        disp_arr = np.array(Image.open(disp_path).convert("L"))
+
+    # Add Run Road Inspection button to sidebar
+    st.sidebar.markdown('<hr style="border:1px solid rgba(99,102,241,0.25);margin:10px 0;">', unsafe_allow_html=True)
+    if st.sidebar.button("🔍 Run Road Inspection", key="btn_run_dataset", use_container_width=True):
+        with st.spinner("🔍 Running Calibrated YOLO11 detection…"):
+            draw_image, pothole_list, severities = run_detection(rgb_pil, disp_arr, manual_conf=manual_conf)
+            health_score = calculate_road_health_score(severities)
+            st.session_state.detection_results = {
+                "draw_image": draw_image,
+                "pothole_list": pothole_list,
+                "severities": severities,
+                "health_score": health_score
+            }
+            st.session_state.inspected = True
+
+    # Render results or zeroed awaiting state
+    if st.session_state.inspected and st.session_state.detection_results is not None:
+        res = st.session_state.detection_results
+        render_metrics(res["health_score"], res["pothole_list"], res["severities"], frame_label=f"#{frame_idx:04d}")
+
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+
+        col_img1, col_img2 = st.columns(2)
+        with col_img1:
+            st.markdown("### 📷 RGB — Detections")
+            st.image(res["draw_image"], use_container_width=True,
+                     caption=f"YOLO11 detections — {file_name}")
+        with col_img2:
+            st.markdown("### 🛰️ Disparity / Depth Map")
+            if disp_arr is not None:
+                colorized = cv2.applyColorMap(disp_arr, cv2.COLORMAP_PLASMA)
+                st.image(colorized, use_container_width=True,
+                         caption="Stereo disparity map (Yellow=near, Purple=far)")
+            else:
+                st.info("No disparity map available for this frame.")
+
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+        col_table, col_map = st.columns(2)
+        with col_table:
+            render_damage_table(res["pothole_list"])
+        with col_map:
+            st.markdown("### 🗺️ Live GPS Damage Map")
+            render_gps_map(res["pothole_list"], frame_idx=frame_idx)
+    else:
+        # Show all-zero neutral pending metrics initially
+        render_metrics(0, [], [], frame_label=f"#{frame_idx:04d} (Pending)")
+
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+
+        col_img1, col_img2 = st.columns(2)
+        with col_img1:
+            st.markdown("### 📷 RGB — Original Photo")
+            st.image(rgb_pil, use_container_width=True,
+                     caption=f"Original road photo — {file_name}")
+        with col_img2:
+            st.markdown("### 🛰️ Disparity / Depth Map")
+            if disp_arr is not None:
+                colorized = cv2.applyColorMap(disp_arr, cv2.COLORMAP_PLASMA)
+                st.image(colorized, use_container_width=True,
+                         caption="Stereo disparity map (Yellow=near, Purple=far)")
+            else:
+                st.info("No disparity map available for this frame.")
+
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+        st.info("💡 Click **Run Road Inspection** in the sidebar to run YOLO11 damage analysis on this frame.")
+
+
+# ═══════════════════════════════════════════════
 # MODE 2 — LIVE PHOTO / UPLOAD
 # ═══════════════════════════════════════════════
-if mode == "📸 Live Photo / Upload":
+elif mode == "📸 Live Photo / Upload":
     st.markdown("## 📸 Live Photo Inspection")
     st.markdown("Upload a road photo **or** snap one with your webcam to instantly detect potholes and get a road health score.")
 
@@ -645,117 +760,3 @@ if mode == "📸 Live Photo / Upload":
             </p>
         </div>""", unsafe_allow_html=True)
 
-
-# ═══════════════════════════════════════════════
-# MODE 3 — LIVE CAMERA STREAM
-# ═══════════════════════════════════════════════
-else:
-    st.markdown("## 📹 Live Camera Stream")
-    st.markdown("Stream from your **local webcam** in real-time. YOLO11 detects potholes on every captured frame.")
-
-    # ── Session state init ──
-    if "cam_running" not in st.session_state:
-        st.session_state.cam_running = True
-
-    st.sidebar.markdown('<hr style="border:1px solid rgba(99,102,241,0.25);margin:10px 0;">', unsafe_allow_html=True)
-    run_detection_live = st.sidebar.checkbox("🔍 Run YOLO11 Detection", value=True,
-                                             help="Uncheck to see raw feed without inference (faster).")
-
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-
-    try:
-        from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
-        import av as av_lib
-        import threading
-
-        RTC_CONFIG = RTCConfiguration({
-            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-        })
-
-        class PotholeDetector(VideoProcessorBase):
-            def __init__(self):
-                self.run_det = True
-                self.pothole_count = 0
-                self.health_score = 100
-                self.severities = []
-                self.lock = threading.Lock()
-
-            def recv(self, frame):
-                img_bgr = frame.to_ndarray(format="bgr24")
-                img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-                img_pil = Image.fromarray(img_rgb)
-
-                if self.run_det:
-                    try:
-                        det_pil, pothole_list, sevs = run_detection(
-                            img_pil, disparity_arr=None, manual_conf=manual_conf
-                        )
-                        hs = calculate_road_health_score(sevs)
-                        with self.lock:
-                            self.pothole_count = len(pothole_list)
-                            self.health_score = hs
-                            self.severities = list(sevs)
-                        out_bgr = cv2.cvtColor(np.array(det_pil), cv2.COLOR_RGB2BGR)
-                    except Exception:
-                        out_bgr = img_bgr
-                else:
-                    with self.lock:
-                        self.pothole_count = 0
-                        self.health_score = 100
-                        self.severities = []
-                    out_bgr = img_bgr
-
-                return av_lib.VideoFrame.from_ndarray(out_bgr, format="bgr24")
-
-        col_feed, col_info = st.columns([3, 2])
-        with col_feed:
-            st.markdown("### 📹 Live Camera Feed")
-            st.caption("Click **START** below the video, then allow camera access in the browser popup.")
-            ctx = webrtc_streamer(
-                key="pothole-live-cam",
-                video_processor_factory=PotholeDetector,
-                rtc_configuration=RTC_CONFIG,
-                media_stream_constraints={"video": True, "audio": False},
-            )
-
-        with col_info:
-            st.markdown("### 📊 Live Detection Info")
-            if ctx and ctx.video_processor:
-                ctx.video_processor.run_det = run_detection_live
-                with ctx.video_processor.lock:
-                    total    = ctx.video_processor.pothole_count
-                    hs       = ctx.video_processor.health_score
-                    sevs     = ctx.video_processor.severities
-                severe_c = sevs.count("Severe")
-                mod_c    = sevs.count("Moderate")
-                mild_c   = sevs.count("Mild")
-
-                if hs >= 80:   hc = "#22c55e"
-                elif hs >= 60: hc = "#eab308"
-                elif hs >= 40: hc = "#f97316"
-                else:          hc = "#ef4444"
-
-                st.markdown(f"""
-                <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">
-                    <div class="metric-card">
-                        <div class="metric-label">Road Health Score</div>
-                        <div class="metric-val" style="color:{hc};">{hs}<span style="font-size:18px;color:#64748b;">/100</span></div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Potholes Detected</div>
-                        <div class="metric-val" style="color:#38bdf8;">{total}</div>
-                        <div class="metric-sub">🔴 {severe_c} &nbsp; 🟠 {mod_c} &nbsp; 🟡 {mild_c}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.info(
-                    "� **Camera not yet started.**\n\n"
-                    "1. Click the **START** button in the video box\n"
-                    "2. Allow camera access when browser asks\n"
-                    "3. YOLO11 will run on every frame automatically\n\n"
-                    "Toggle **🔍 Run YOLO11 Detection** in the sidebar to switch between raw and detected feed."
-                )
-
-    except ImportError:
-        st.error("❌ `streamlit-webrtc` not installed. Run: `pip install streamlit-webrtc av`")
