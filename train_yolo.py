@@ -5,9 +5,9 @@ def train():
     base_dir = r"c:\Users\meher\Downloads\mini DATASET"
     yaml_path = os.path.join(base_dir, "yolo_dataset", "dataset.yaml")
     
-    print("Initializing YOLOv8-Nano model...")
-    # Load a pre-trained yolov8n model
-    model = YOLO("yolov8n.pt")
+    print("Initializing YOLO11-Nano model...")
+    # Load a pre-trained yolo11n model
+    model = YOLO("yolo11n.pt")
     
     print("Starting training on GPU (CUDA)...")
     # Train the model
