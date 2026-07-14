@@ -109,10 +109,24 @@ st.markdown("""
 # ─────────────────────────────────────────────
 @st.cache_resource
 def load_yolo_model():
-    model_path = r"c:\Users\meher\Downloads\mini DATASET\models\best.pt"
-    if os.path.exists(model_path):
-        return YOLO(model_path)
-    st.warning("⚠️ Trained model not found at models/best.pt — using default YOLO11-Nano weights.")
+    # 1. Try path from Streamlit Secrets (if configured)
+    # 2. Try relative path within repository
+    # 3. Try hardcoded local absolute path
+    paths_to_try = []
+    try:
+        if "MODEL_PATH" in st.secrets:
+            paths_to_try.append(st.secrets["MODEL_PATH"])
+    except Exception:
+        pass
+    
+    paths_to_try.append(os.path.join(os.path.dirname(__file__), "models", "best.pt"))
+    paths_to_try.append(r"c:\Users\meher\Downloads\mini DATASET\models\best.pt")
+    
+    for path in paths_to_try:
+        if path and os.path.exists(path):
+            return YOLO(path)
+            
+    st.warning("⚠️ Trained model not found — using default YOLO11-Nano weights.")
     return YOLO("yolo11n.pt")
 
 model = load_yolo_model()
@@ -525,7 +539,18 @@ st.markdown("""
 # MODE 1 — DATASET BROWSE
 # ═══════════════════════════════════════════════
 if mode == "📂 Dataset Browse":
-    base_dir      = r"c:\Users\meher\Downloads\mini DATASET"
+    # 1. Try dataset directory path from Streamlit Secrets
+    # 2. Try relative path within repository
+    # 3. Try hardcoded local absolute path
+    base_dir = r"c:\Users\meher\Downloads\mini DATASET"
+    try:
+        if "DATASET_DIR" in st.secrets:
+            base_dir = st.secrets["DATASET_DIR"]
+        elif os.path.exists(os.path.join(os.path.dirname(__file__), "archive")):
+            base_dir = os.path.dirname(__file__)
+    except Exception:
+        pass
+        
     test_rgb_dir  = os.path.join(base_dir, "archive", "pothole600", "testing", "rgb")
     test_disp_dir = os.path.join(base_dir, "archive", "pothole600", "testing", "tdisp")
 
